@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+            <head>
+		<title>Insult Detection</title>
+		<script src = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0/dist/tf.js"></script>
+	</head>
+	
+	<body>
+		
+		<h1>Insult Detection</h1>
+		
+		<textarea id = "inpMsg" rows = "4" cols = "50" placeholder = "Enter your text..."></textarea>
+		<br>
+		<button onclick = "predictInsult()">Predict</button>
+		<h3 id = "tagPrediction"></h3>
+		
+    		<script>
+			
+			// Set the random seed for reproducibility
+    			// Set the seed for the random number generator
+			function setSeed(seed) {
+				Math.seedrandom(seed);
+			}
+			
+			setSeed(123); // Set the seed to a specific value
+			
+      			// Training data
+			let trainingData = 	[
+							{ text: "You are such a jerk!", label: 1 },
+							{ text: "I can't believe how stupid you are.", label: 1 },
+							{ text: "You're an idiot!", label: 1 },
+							{ text: "You look ugly in that dress.", label: 1 },
+							{ text: "Nice try, loser.", label: 1 },
+							{ text: "I hate you!", label: 1 },
+							{ text: "You're the worst.", label: 1 },
+							{ text: "You make me sick.", label: 1 },
+							{ text: "I hope you fail.", label: 1 },
+							{ text: "Have a great day!", label: 0 },
+							{ text: "You did a good job.", label: 0 },
+							{ text: "Thank you for your help.", label: 0 },
+							{ text: "You're so kind.", label: 0 },
+							{ text: "I appreciate your support.", label: 0 },
+							{ text: "Congratulations on your success.", label: 0 },
+							{ text: "You're amazing!", label: 0 },
+							{ text: "I'm proud of you.", label: 0 },
+							{ text: "You're a great friend.", label: 0 },
+							{ text: "Keep up the good work.", label: 0 },
+						];
+			/*
+				Adding more diverse and representative training data can help the model 
+				learn better patterns and improve its predictive performance. Consider expanding the training data 
+				with a larger and more varied set of examples.
+			*/
+			
+			// Make a prediction
+			async function predictInsult() {
+				const inputText = document.getElementById("inpMsg").value.toLowerCase();
+				
+				// Preprocess the input text
+				const processedData = preprocessData([{ text: inputText, label: 0 }]);
+				const paddedSequence = padSequences(processedData.sequences)[0];
+				
+				// Make a prediction using the pre-trained model
+				const prediction = model.predict(tf.tensor2d([paddedSequence]));
+				
+				const insultProbability = prediction.dataSync()[0];
+				
+				// Display the result
+				const resultElement = document.getElementById("tagPrediction");
+				resultElement.innerHTML = "Insult probability: " + insultProbability;
+			}
+			
+			// Preprocess training data
+			function preprocessData(data) {
+				const vocabulary = new Set();
+				const processedData = data.map((item) => {
+					const text = item.text.toLowerCase();
+					const words = text.split(' ');
+					words.forEach((word) => vocabulary.add(word));
+					return {
+						text,
+						label: item.label,
+					};
+				});
+				
+        			const wordToIndex = {};
+        			let index = 1; // Start from 1 to reserve 0 for padding
+        			vocabulary.forEach((word) => {
+					wordToIndex[word] = index;
+					index++;
+				});
+
+				const sequences = processedData.map((item) => {
+					const words = item.text.split(' ');
+					return words.map((word) => wordToIndex[word] || 0); // Replace unknown words with 0
+				});
+
+				return {
+					sequences,
+					labels: processedData.map((item) => item.label),
+				};
+			}
+			
+			// Pad sequences with zeros to a specific length
+			function padSequences(sequences, maxLength = 10) {
+				return sequences.map((sequence) => {
+					if (sequence.length < maxLength) {
+						const padLength = maxLength - sequence.length;
+						return sequence.concat(new Array(padLength).fill(0));
+					}
+					return sequence.slice(0, maxLength);
+				});
+			}
+			
+			// Create TensorFlow.js model
+			function createModel() {
+				const model = tf.sequential();
+				
+				/* 
+					By having more units, the layer can learn a greater variety of features and 
+					potentially increase the model's ability to extract meaningful information.
+					Increasing the number of units can increase the model's capacity to learn 
+					complex patterns but may also require more computational resources and training data. 
+					Finding the optimal number of units for a specific task often involves experimentation 
+					and tuning based on the performance and generalization ability of the model.
+				*/
+				model.add(tf.layers.dense({ units: 8, inputShape: [10], activation: 'relu' }));
+				
+				/*
+					The output layer typically has a single unit for binary classification problems 
+					like insult detection, where the goal is to predict whether a given text is an 
+					insult or not.
+					
+					The activation function used here is Sigmoid.
+					Other activation functions: 
+					'elu', 'selu', 'relu', 'leakyrelu', 'sigmoid', 'tanh', 'hardsigmoid', 'softsign', 'softmax'	
+					
+				*/
+				model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+				
+				// Define the optimizer with the desired learning rate
+				const learningRate = 0.001;
+				const optimizer = tf.train.adam(learningRate);
+				
+				/*
+					Here are some of the commonly used optimizers available in TensorFlow.js:
+					
+					1. Stochastic Gradient Descent (SGD): 'sgd'
+					2. Adam: 'adam'
+					3. RMSProp: 'rmsprop'
+					4. Adagrad: 'adagrad'
+					5. Adadelta: 'adadelta'
+					6. Adamax: 'adamax'
+					7. Nadam: 'nadam'
+					
+					These optimizers have different algorithms and hyperparameters, which can 
+					affect the convergence and performance of the model during training. 
+					It's recommended to experiment with different optimizers to find the one that 
+					works best for your specific problem and dataset. 
+					Additionally, each optimizer may accept additional parameters that can be 
+					customized according to your needs, such as learning rate, momentum, decay rates, etc.
+				*/
+				
+				model.compile({ loss: 'binaryCrossentropy', optimizer: 'adam', metrics: ['accuracy'] });
+				return model;
+			}
+			
+			let model;
+			
+			// Train the model
+			async function trainModel() {
+				const processedData = preprocessData(trainingData);
+				const paddedSequences = padSequences(processedData.sequences);
+				const labels = tf.tensor1d(processedData.labels);
+				
+				model = createModel();
+				
+				const history = await model.fit(tf.tensor2d(paddedSequences), labels.expandDims(-1), {
+					batchSize: 32,
+					epochs: 10,
+					validationSplit: 0.2,
+					shuffle: true,
+				});
+				
+				/*
+					batchSize:
+					By adjusting the batch size, you can control the number of training examples processed 
+					in each training step. 
+					A larger batch size may lead to faster training but requires more memory, while a smaller 
+					batch size may result in slower training but can lead to better convergence. 
+					It's recommended to experiment with different batch sizes to find the optimal value for your 
+					specific task and hardware constraints.
+					
+					epochs:
+					Epochs refer to the number of times the model iterates over the entire training dataset during 
+					the training process. In each epoch, the model goes through all the training samples, updates 
+					its internal parameters (weights and biases), and tries to minimize the loss function.
+					
+					During training, the model makes predictions on the training data, compares them to the actual labels, 
+					calculates the loss (a measure of the prediction error), and uses an optimizer to adjust the model's 
+					parameters to reduce the loss. This process is repeated for the specified number of epochs.
+					
+					The choice of the number of epochs depends on several factors, including the complexity of the problem, 
+					the size of the dataset, and the convergence of the model. Too few epochs may result in underfitting, 
+					where the model fails to capture the patterns in the data. On the other hand, too many epochs may lead 
+					to overfitting, where the model becomes too specialized to the training data and performs poorly on unseen data.
+					
+					validationSplit:
+					The validationSplit parameter is used during model training to allocate a portion of the training data as a 
+					validation set. It specifies the fraction of the data that should be used for validation.
+					When training a machine learning model, it is important to evaluate its performance on data that it has not 
+					seen during training. The validation set serves this purpose. During each epoch of training, the model's 
+					performance on the validation set is measured using a validation metric (such as accuracy or loss). 
+					This allows you to monitor the model's progress and detect overfitting or underfitting.
+
+					The validationSplit parameter takes a value between 0 and 1, representing the proportion of the training data 
+					to use for validation. For example, a validationSplit of 0.2 means that 20% of the training data will be set 
+					aside for validation, while the remaining 80% will be used for actual model training.
+				*/
+				
+				console.log('Training history:', history);
+				
+			}
+			
+			// Train the model on page load
+			trainModel().catch((error) => {
+				console.error('Error training the model:', error);
+			});
+			
+			/*
+				Other things to explore:
+					
+					1. Remove stopwords: Stopwords are common words that do not carry much meaning in the context 
+					of text analysis, such as "and," "the," or "is."
+					
+					2. Perform stemming or lemmatization: Stemming and lemmatization are techniques used to reduce 
+					words to their root forms. Stemming removes prefixes and suffixes, while lemmatization maps words 
+					to their base or dictionary forms. These techniques can help in reducing the vocabulary size and 
+					capturing the core meaning of words.
+					
+					3. Handle capitalization: You can decide whether to preserve or remove capitalization in the text.
+
+					4. Handle special characters and punctuation: Depending on your specific problem, you may choose to 
+					remove or replace special characters and punctuation marks.
+					
+					5. Explore n-grams: Instead of considering individual words, you can explore using n-grams, 
+					which are sequences of n consecutive words.
+					
+					6. Explore word embeddings: 
+						Instead of representing words as one-hot encoded vectors, 
+						you can consider using word embeddings like Word2Vec or GloVe. 
+						Word embeddings can capture semantic relationships between words 
+						and provide a more meaningful representation of the text data.
+					
+					7. Regularization techniques: 
+						Apply regularization techniques such as dropout or L1/L2 regularization 
+						to prevent overfitting and improve generalization.
+			*/
+			
+		</script>
+    </body>
+</html>
